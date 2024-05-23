@@ -1,0 +1,20 @@
+.idea/
+*__pycache__*
+*__init__*
+**/logs/**
+**/gifs/**
+**/models_ph/**
+tst/mnist_tutorial/files/
+tst/mnist_tutorial/results/
+files/
+launch.json
+Pipfile
+logs/
+.pytest_cache/
+results/
+runs/
+
+# Hydra
+multirun/
+outputs/
+*.pth
