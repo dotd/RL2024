@@ -3,6 +3,7 @@
 *__init__*
 **/logs/**
 **/gifs/**
+**/save_graph/**
 **/models_ph/**
 tst/mnist_tutorial/files/
 tst/mnist_tutorial/results/
