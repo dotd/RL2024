@@ -505,6 +505,7 @@ def check_button():
 window.attributes("-topmost", False)
 
 # MAIN LOOP
+
 for i_episode in range(N_EPISODES):
     # Initialize the environment and state
     env.reset()
