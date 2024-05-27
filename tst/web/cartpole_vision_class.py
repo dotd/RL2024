@@ -67,9 +67,8 @@ class ReplayMemory(object):
         if len(self.memory) < self.capacity:
             self.memory.append(None)  # if we haven't reached full capacity, we append a new transition
         self.memory[self.position] = Transition(*args)
-        self.position = (
-                                self.position + 1) % self.capacity  # e.g if the capacity is 100, and our position is now 101, we don't append to
-        # position 101 (impossible), but to position 1 (its remainder), overwriting old data
+        self.position = (self.position + 1) % self.capacity  # e.g. if the capacity is 100, and our position is now 101,
+        # we don't append to position 101 (impossible), but to position 1 (its remainder), overwriting old data
 
     def sample(self, batch_size):
         return random.sample(self.memory, batch_size)
@@ -93,24 +92,25 @@ class Trainer:
         self.MEMORY_SIZE = args.MEMORY_SIZE
         self.LAST_EPISODES_NUM = args.LAST_EPISODES_NUM
         self.TRAINING_STOP = args.TRAINING_STOP
+        self.GRAYSCALE = args.GRAYSCALE
+        self.RESIZE_PIXELS = args.RESIZE_PIXELS
+        self.USE_CUDA = args.USE_CUDA
 
         self.save_graph_folder = 'save_graph/'
         os.makedirs(self.save_graph_folder) if not os.path.exists(self.save_graph_folder) else None
         self.mean_last = deque([0] * self.LAST_EPISODES_NUM, self.LAST_EPISODES_NUM)
-        self.graph_name = f'Cartpole_Vision_Stop-{args.TRAINING_STOP}_LastEpNum-{args.LAST_EPISODES_NUM}'
+        self.graph_name = f'Cartpole_Vision_Stop-{self.TRAINING_STOP}_LastEpNum-{self.LAST_EPISODES_NUM}'
 
         # Settings for GRAYSCALE / RGB
-        if args.GRAYSCALE == 0:
-            self.resize = T.Compose([T.ToPILImage(),
-                                     T.Resize(args.RESIZE_PIXELS, interpolation=Image.CUBIC),
-                                     T.ToTensor()])
-            self.nn_inputs = 3 * args.FRAMES  # number of channels for the nn
+        if self.GRAYSCALE == 0:
+            self.resize = (
+                T.Compose([T.ToPILImage(), T.Resize(self.RESIZE_PIXELS, interpolation=Image.CUBIC), T.ToTensor()]))
+            self.nn_inputs = 3 * self.FRAMES  # number of channels for the nn
         else:
-            self.resize = T.Compose([T.ToPILImage(),
-                                     T.Resize(args.RESIZE_PIXELS, interpolation=Image.BICUBIC),
-                                     T.Grayscale(),
-                                     T.ToTensor()])
-            self.nn_inputs = args.FRAMES  # number of channels for the nn
+            self.resize = (
+                T.Compose([T.ToPILImage(), T.Resize(self.RESIZE_PIXELS, interpolation=Image.BICUBIC), T.Grayscale(),
+                           T.ToTensor()]))
+            self.nn_inputs = self.FRAMES  # number of channels for the nn
 
         self.stop_training = False
         self.env = gym.make('CartPole-v0', render_mode='rgb_array').unwrapped
@@ -119,17 +119,13 @@ class Trainer:
 
         # Set up matplotlib
         plt.ion()
-        self.device = torch.device("cuda" if (torch.cuda.is_available() and args.USE_CUDA) else "cpu")
-        if args.GRAYSCALE == 0:
-            plt.imshow(self.get_screen().cpu().squeeze(0).permute(1, 2, 0).numpy(),
-                       interpolation='none')
+        self.device = torch.device("cuda" if (torch.cuda.is_available() and self.USE_CUDA) else "cpu")
+        if self.GRAYSCALE == 0:
+            plt.imshow(self.get_screen().cpu().squeeze(0).permute(1, 2, 0).numpy(), interpolation='none')
         else:
-            plt.imshow(self.get_screen().cpu().squeeze(0).permute(
-                1, 2, 0).numpy().squeeze(), cmap='gray')
+            plt.imshow(self.get_screen().cpu().squeeze(0).permute(1, 2, 0).numpy().squeeze(), cmap='gray')
         plt.title('Example extracted screen')
         plt.show()
-
-        eps_threshold = 0.9  # original = 0.9
 
         init_screen = self.get_screen()
         _, _, screen_height, screen_width = init_screen.shape
@@ -153,11 +149,13 @@ class Trainer:
             self.stop_training = True  # if we want to load, then we don't train the network anymore
 
         self.optimizer = optim.RMSprop(self.policy_net.parameters())
-        self.memory = ReplayMemory(args.MEMORY_SIZE)
+        self.memory = ReplayMemory(self.MEMORY_SIZE)
+        self.steps_done = None
+        self.episode_durations = None
 
+    def train(self):
         self.steps_done = 0
         self.episode_durations = []
-
         for i_episode in range(self.N_EPISODES):
             # Initialize the environment and state
             self.env.reset()
@@ -214,7 +212,6 @@ class Trainer:
             # Update the target network, copying all weights and biases in DQN
             if i_episode % self.TARGET_UPDATE == 0:
                 self.target_net.load_state_dict(self.policy_net.state_dict())
-
         print('Complete')
         self.env.render()
         self.env.close()
