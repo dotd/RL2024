@@ -24,24 +24,33 @@ Transition = namedtuple('Transition',
 
 class DQN(nn.Module):
 
-    def __init__(self, h, w, outputs, args, nn_inputs):
+    def __init__(
+            self,
+            height,
+            width,
+            nn_inputs,
+            outputs,
+            hidden_layer_1,
+            hidden_layer_2,
+            hidden_layer_3,
+            kernel_size,
+            stride,
+    ):
         super(DQN, self).__init__()
-        self.conv1 = nn.Conv2d(nn_inputs, args.HIDDEN_LAYER_1, kernel_size=args.KERNEL_SIZE, stride=args.STRIDE)
-        self.bn1 = nn.BatchNorm2d(args.HIDDEN_LAYER_1)
-        self.conv2 = nn.Conv2d(args.HIDDEN_LAYER_1, args.HIDDEN_LAYER_2, kernel_size=args.KERNEL_SIZE,
-                               stride=args.STRIDE)
-        self.bn2 = nn.BatchNorm2d(args.HIDDEN_LAYER_2)
-        self.conv3 = nn.Conv2d(args.HIDDEN_LAYER_2, args.HIDDEN_LAYER_3, kernel_size=args.KERNEL_SIZE,
-                               stride=args.STRIDE)
-        self.bn3 = nn.BatchNorm2d(args.HIDDEN_LAYER_3)
+        self.conv1 = nn.Conv2d(nn_inputs, hidden_layer_1, kernel_size=kernel_size, stride=stride)
+        self.bn1 = nn.BatchNorm2d(hidden_layer_1)
+        self.conv2 = nn.Conv2d(hidden_layer_1, hidden_layer_2, kernel_size=kernel_size, stride=stride)
+        self.bn2 = nn.BatchNorm2d(hidden_layer_2)
+        self.conv3 = nn.Conv2d(hidden_layer_2, hidden_layer_3, kernel_size=kernel_size, stride=stride)
+        self.bn3 = nn.BatchNorm2d(hidden_layer_3)
 
         # Number of Linear input connections depends on output of conv2d layers
         # and therefore the input image size, so compute it.
-        def conv2d_size_out(size, kernel_size=5, stride=2):
+        def conv2d_size_out(size, kernel_size=kernel_size, stride=stride):
             return (size - (kernel_size - 1) - 1) // stride + 1
 
-        convw = conv2d_size_out(conv2d_size_out(conv2d_size_out(w)))
-        convh = conv2d_size_out(conv2d_size_out(conv2d_size_out(h)))
+        convw = conv2d_size_out(conv2d_size_out(conv2d_size_out(width)))
+        convh = conv2d_size_out(conv2d_size_out(conv2d_size_out(height)))
         linear_input_size = convw * convh * 32
         nn.Dropout()
         self.head = nn.Linear(linear_input_size, outputs)
@@ -88,13 +97,14 @@ class Trainer:
         self.END_SCORE = args.END_SCORE
         self.BATCH_SIZE = args.BATCH_SIZE
         self.GAMMA = args.GAMMA
-        self.TARGET_UPDATE = args.TARGET_UPDATE
+        self.TARGET_NETWORK_UPDATE = args.TARGET_NETWORK_UPDATE
         self.MEMORY_SIZE = args.MEMORY_SIZE
         self.LAST_EPISODES_NUM = args.LAST_EPISODES_NUM
         self.TRAINING_STOP = args.TRAINING_STOP
         self.GRAYSCALE = args.GRAYSCALE
         self.RESIZE_PIXELS = args.RESIZE_PIXELS
         self.USE_CUDA = args.USE_CUDA
+        self.update_graph = args.UPDATE_GRAPH
 
         self.save_graph_folder = 'save_graph/'
         os.makedirs(self.save_graph_folder) if not os.path.exists(self.save_graph_folder) else None
@@ -134,8 +144,24 @@ class Trainer:
         # Get number of actions from gym action space
         self.n_actions = self.env.action_space.n
 
-        self.policy_net = DQN(screen_height, screen_width, self.n_actions, args, self.nn_inputs).to(self.device)
-        self.target_net = DQN(screen_height, screen_width, self.n_actions, args, self.nn_inputs).to(self.device)
+        self.policy_net = DQN(height=screen_height,
+                              width=screen_width,
+                              nn_inputs=self.nn_inputs,
+                              outputs=self.n_actions,
+                              hidden_layer_1=args.HIDDEN_LAYER_1,
+                              hidden_layer_2=args.HIDDEN_LAYER_2,
+                              hidden_layer_3=args.HIDDEN_LAYER_3,
+                              kernel_size=args.KERNEL_SIZE,
+                              stride=args.STRIDE).to(self.device)
+        self.target_net = DQN(height=screen_height,
+                              width=screen_width,
+                              nn_inputs=self.nn_inputs,
+                              outputs=self.n_actions,
+                              hidden_layer_1=args.HIDDEN_LAYER_1,
+                              hidden_layer_2=args.HIDDEN_LAYER_2,
+                              hidden_layer_3=args.HIDDEN_LAYER_3,
+                              kernel_size=args.KERNEL_SIZE,
+                              stride=args.STRIDE).to(self.device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
 
@@ -164,7 +190,8 @@ class Trainer:
             state = torch.cat(list(screens), dim=1)
 
             for t in count():
-
+                print(t)
+                print(state.shape)
                 # Select and perform an action
                 action = self.select_action(state, self.stop_training)
                 state_variables, _, done1, done2, _ = self.env.step(action.item())
@@ -199,10 +226,7 @@ class Trainer:
                     self.episode_durations.append(t + 1)
                     self.plot_durations(t + 1)
                     self.mean_last.append(t + 1)
-                    mean = 0
-                    for i in range(self.LAST_EPISODES_NUM):
-                        mean = self.mean_last[i] + mean
-                    mean = mean / self.LAST_EPISODES_NUM
+                    mean = np.mean(self.mean_last)
                     if mean < self.TRAINING_STOP and self.stop_training == False:
                         self.optimize_model()
                     else:
@@ -210,7 +234,7 @@ class Trainer:
                     break
 
             # Update the target network, copying all weights and biases in DQN
-            if i_episode % self.TARGET_UPDATE == 0:
+            if i_episode % self.TARGET_NETWORK_UPDATE == 0:
                 self.target_net.load_state_dict(self.policy_net.state_dict())
         print('Complete')
         self.env.render()
@@ -277,17 +301,20 @@ class Trainer:
         plt.plot(durations_t.numpy(), label='Score')
         matplotlib.pyplot.hlines(195, 0, episode_number, colors='red', linestyles=':', label='Win Threshold')
         # Take 100 episode averages and plot them too
+        self.print(durations_t, episode_number, score)
+        plt.legend(loc='upper left')
+        # plt.savefig('./save_graph/cartpole_dqn_vision_test.png') # for saving graph with latest 100 mean
+        plt.pause(0.001)  # pause a bit so that plots are updated
+
+        plt.savefig(self.save_graph_folder + self.graph_name)
+
+    def print(self, durations_t, episode_number, score):
         if len(durations_t) >= 100:
             means = durations_t.unfold(0, 100, 1).mean(1).view(-1)
             last100_mean = means[episode_number - 100].item()
             means = torch.cat((torch.zeros(99), means))
             plt.plot(means.numpy(), label='Last 100 mean')
             print('Episode: ', episode_number, ' | Score: ', score, '| Last 100 mean = ', last100_mean)
-        plt.legend(loc='upper left')
-        # plt.savefig('./save_graph/cartpole_dqn_vision_test.png') # for saving graph with latest 100 mean
-        plt.pause(0.001)  # pause a bit so that plots are updated
-
-        plt.savefig(self.save_graph_folder + self.graph_name)
 
     def select_action(self, state, stop_training):
         sample = random.random()
@@ -342,6 +369,7 @@ class Trainer:
 
 def run_main(args):
     trainer = Trainer(args)
+    trainer.train()
 
 
 def prepare_parameters_and_logging():
@@ -353,7 +381,7 @@ def prepare_parameters_and_logging():
     parser.add_argument("--EPS_START", type=float, default=0.9)
     parser.add_argument("--EPS_END", type=float, default=0.05)
     parser.add_argument("--EPS_DECAY", type=int, default=5000)
-    parser.add_argument("--TARGET_UPDATE", type=int, default=50)
+    parser.add_argument("--TARGET_NETWORK_UPDATE", type=int, default=50)
     parser.add_argument("--MEMORY_SIZE", type=int, default=100000)
     parser.add_argument("--END_SCORE", type=int, default=200)
     parser.add_argument("--USE_CUDA", type=bool, default=False)
@@ -374,6 +402,7 @@ def prepare_parameters_and_logging():
     parser.add_argument("--model_save_interval", type=int, default=11)
     parser.add_argument("--logging_interval", type=int, default=4)
     parser.add_argument("--FONT", type=str, default="Fixedsys 12 bold")
+    parser.add_argument("--UPDATE_GRAPH", type=int, default=10)
 
     args = parser.parse_args()
     filename_full = os.path.abspath(__file__)
