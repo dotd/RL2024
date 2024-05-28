@@ -133,7 +133,7 @@ class Trainer:
 
         init_screen = self.get_screen()
         _, _, screen_height, screen_width = init_screen.shape
-        print("Screen height: ", screen_height, " | Width: ", screen_width)
+        logging.info("Screen height: ", screen_height, " | Width: ", screen_width)
 
         # Get number of actions from gym action space
         self.n_actions = self.env.action_space.n
@@ -215,7 +215,7 @@ class Trainer:
             if i_episode % self.TARGET_UPDATE == 0:
                 self.target_net.load_state_dict(self.policy_net.state_dict())
 
-        print('Complete')
+        logging.info('Complete')
         self.env.render()
         self.env.close()
         plt.ioff()
@@ -285,7 +285,7 @@ class Trainer:
             last100_mean = means[episode_number - 100].item()
             means = torch.cat((torch.zeros(99), means))
             plt.plot(means.numpy(), label='Last 100 mean')
-            print('Episode: ', episode_number, ' | Score: ', score, '| Last 100 mean = ', last100_mean)
+            logging.info('Episode: ', episode_number, ' | Score: ', score, '| Last 100 mean = ', last100_mean)
         plt.legend(loc='upper left')
         # plt.savefig('./save_graph/cartpole_dqn_vision_test.png') # for saving graph with latest 100 mean
         plt.pause(0.001)  # pause a bit so that plots are updated
@@ -294,10 +294,8 @@ class Trainer:
 
     def select_action(self, state, stop_training):
         sample = random.random()
-        eps_threshold = self.EPS_END + (self.EPS_START - self.EPS_END) * \
-                        math.exp(-1. * self.steps_done / self.EPS_DECAY)
+        eps_threshold = self.EPS_END + (self.EPS_START - self.EPS_END) * math.exp(-self.steps_done / self.EPS_DECAY)
         self.steps_done += 1
-        # print('Epsilon = ', eps_threshold, end='\n')
         if sample > eps_threshold or stop_training:
             with torch.no_grad():
                 # t.max(1) will return largest column value of each row.
